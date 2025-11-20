@@ -4129,9 +4129,29 @@ def get_litellm_model_info(model: dict = {}):
     model_info = model.get("model_info", {})
     model_to_lookup = model.get("litellm_params", {}).get("model", None)
     try:
-        if "azure" in model_to_lookup:
-            model_to_lookup = model_info.get("base_model", None)
-        litellm_model_info = litellm.get_model_info(model_to_lookup)
+        # Determine the custom_llm_provider from the model string
+        custom_llm_provider = None
+        if model_to_lookup and "/" in model_to_lookup:
+            # Extract provider from model string (e.g., "azure/gpt-5.1-chat" -> "azure")
+            potential_provider = model_to_lookup.split("/")[0]
+            # Check if it's a valid provider prefix
+            if potential_provider in ["azure", "openai", "anthropic", "bedrock", "vertex_ai", "cohere", "replicate", "huggingface", "together_ai", "palm", "gemini", "mistral", "groq", "deepseek", "perplexity", "anyscale", "cloudflare", "voyage", "xinference", "fireworks_ai", "friendliai", "ollama", "deepinfra", "ai21", "nlp_cloud", "aleph_alpha", "baseten", "vllm", "sagemaker", "petals"]:
+                custom_llm_provider = potential_provider
+        
+        # For Azure models, also check if we should use base_model
+        if custom_llm_provider == "azure" and "base_model" in model_info:
+            # Use base_model but keep the azure provider
+            base_model = model_info.get("base_model", None)
+            if base_model:
+                litellm_model_info = litellm.get_model_info(base_model, custom_llm_provider="azure")
+            else:
+                litellm_model_info = litellm.get_model_info(model_to_lookup, custom_llm_provider=custom_llm_provider)
+        elif custom_llm_provider:
+            # Pass the custom_llm_provider to get_model_info
+            litellm_model_info = litellm.get_model_info(model_to_lookup, custom_llm_provider=custom_llm_provider)
+        else:
+            # No provider detected, call without custom_llm_provider
+            litellm_model_info = litellm.get_model_info(model_to_lookup)
         return litellm_model_info
     except Exception:
         # this should not block returning on /model/info
