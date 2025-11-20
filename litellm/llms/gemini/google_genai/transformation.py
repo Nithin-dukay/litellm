@@ -61,7 +61,6 @@ class GoogleGenAIConfig(BaseGoogleGenAIGenerateContentConfig, VertexLLM):
         """
         return [
             "http_options",
-            "system_instruction",
             "temperature",
             "top_p",
             "top_k",
