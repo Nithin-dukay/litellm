@@ -623,6 +623,50 @@ class LiteLLMResponsesTransformationHandler(CompletionTransformationBridge):
 
         return image_param
 
+    def _convert_content_to_responses_format_file(
+        self, content: Dict[str, Any], role: str
+    ) -> Dict[str, Any]:
+        """
+        Convert chat completion file content to responses API input_file format.
+
+        Chat Completion file format:
+        {
+            "type": "file",
+            "file": {
+                "file_data": "data:application/pdf;base64,...",
+                "filename": "document.pdf"
+            }
+        }
+
+        Responses API input_file format:
+        {
+            "type": "input_file",
+            "file_data": "data:application/pdf;base64,...",
+            "filename": "document.pdf"
+        }
+        """
+        file_obj = content.get("file")
+        if not isinstance(file_obj, dict):
+            raise ValueError(f"Invalid file object: {file_obj}")
+
+        file_data = file_obj.get("file_data")
+        filename = file_obj.get("filename")
+
+        if not file_data:
+            raise ValueError(f"Missing file_data in file object: {file_obj}")
+
+        # Build the input_file param with required fields
+        input_file_param: Dict[str, Any] = {
+            "type": "input_file",
+            "file_data": file_data,
+        }
+
+        # Add optional filename if present
+        if filename:
+            input_file_param["filename"] = filename
+
+        return input_file_param
+
     def _convert_content_to_responses_format(
         self,
         content: Optional[
@@ -683,6 +727,15 @@ class LiteLLMResponsesTransformationHandler(CompletionTransformationBridge):
                         result.append(converted)
                         verbose_logger.debug(
                             f"Chat provider:   image_url -> {converted}"
+                        )
+                    elif original_type == "file":
+                        # Map to responses API file format (input_file)
+                        converted = self._convert_content_to_responses_format_file(
+                            item, role
+                        )
+                        result.append(converted)
+                        verbose_logger.debug(
+                            f"Chat provider:   file -> {converted}"
                         )
                     else:
                         # Try to map other types to responses API format

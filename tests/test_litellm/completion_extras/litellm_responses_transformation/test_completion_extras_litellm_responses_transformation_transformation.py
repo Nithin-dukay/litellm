@@ -1967,7 +1967,7 @@ def test_parallel_tool_calls_comprehensive_streaming_integration():
 
 def test_map_optional_params_preserves_reasoning_summary():
     """Test that reasoning_effort dict with summary field is preserved.
-    
+
     Regression test for: User reported that summary field was being dropped
     when routing to Responses API. The dict format should be fully preserved.
     """
@@ -1995,3 +1995,77 @@ def test_map_optional_params_preserves_reasoning_summary():
     assert responses_api_request["reasoning"] == {"effort": "high", "summary": "detailed"}
     assert responses_api_request["reasoning"]["effort"] == "high"
     assert responses_api_request["reasoning"]["summary"] == "detailed"
+
+
+def test_convert_chat_completion_messages_to_responses_api_file_input():
+    """
+    Test that file content in chat completion messages is correctly transformed to Responses API format.
+
+    This is a regression test for issue #23588 where file content was incorrectly transformed
+    from Chat Completion format to Responses API format. The file content was being stringified
+    and sent as input_text instead of input_file.
+
+    Chat Completion format:
+        {"type": "file", "file": {"file_data": "data:application/pdf;base64,...", "filename": "document.pdf"}}
+
+    Responses API format:
+        {"type": "input_file", "file_data": "data:application/pdf;base64,...", "filename": "document.pdf"}
+    """
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    test_file_base64 = "data:application/pdf;base64,JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFI+PgplbmRvYmoKMiAwIG9iago8PC9UeXBlL1BhZ2VzL0NvdW50IDEvS2lkc1szIDAgUl0+PgplbmRvYmoKMyAwIG9iago8PC9UeXBlL1BhZ2UvTWVkaWFCb3hbMCAwIDYxMiA3OTJdL1BhcmVudCAyIDAgUi9SZXNvdXJjZXM8PC9Gb250PDwvRjE8PC9UeXBlL0ZvbnQvU3VidHlwZS9UeXBlMS9CYXNlRm9udC9IZWx2ZXRpY2E+Pj4+Pj4vQ29udGVudHMgNCAwIFI+PgplbmRvYmoKNCAwIG9iago8PC9MZW5ndGggNDQ+PgpzdHJlYW0KQlQKL0YxIDI0IFRmCjEwMCA3MDAgVGQKKEhlbGxvIFdvcmxkKSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxOCAwMDAwMCBuIAowMDAwMDAwMDc3IDAwMDAwIG4gCjAwMDAwMDAxMzQgMDAwMDAgbiAKMDAwMDAwMDMwMyAwMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNS9Sb290IDEgMCBSPj4Kc3RhcnR4cmVmCjM5NgolJUVPRgo="
+    test_filename = "secret-word.pdf"
+
+    # Chat Completion format with file in user message
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "What is the secret word in this PDF? Reply with just the word.",
+                },
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": test_file_base64,
+                        "filename": test_filename,
+                    },
+                },
+            ],
+        },
+    ]
+
+    response, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    # Find the message item
+    message_item = None
+    for item in response:
+        if item.get("type") == "message":
+            message_item = item
+            break
+
+    assert message_item is not None, "message item not found in response"
+    assert message_item["role"] == "user"
+
+    # Check that the content is correctly transformed
+    content = message_item["content"]
+    assert isinstance(content, list), "content should be a list"
+    assert len(content) == 2, "content should have two items (text and file)"
+
+    # First item should be text
+    text_item = content[0]
+    assert text_item["type"] == "input_text", f"Expected type 'input_text', got '{text_item.get('type')}'"
+    assert "secret word" in text_item["text"]
+
+    # Second item should be transformed to input_file
+    file_item = content[1]
+    assert file_item["type"] == "input_file", f"Expected type 'input_file', got '{file_item.get('type')}'"
+    assert file_item["file_data"] == test_file_base64, "file_data should be preserved"
+    assert file_item["filename"] == test_filename, "filename should be preserved"
+
+    print("✓ File content correctly transformed from Chat Completion to Responses API format")
