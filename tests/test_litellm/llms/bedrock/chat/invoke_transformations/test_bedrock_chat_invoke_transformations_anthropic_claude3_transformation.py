@@ -456,3 +456,24 @@ def test_output_format_removed_from_bedrock_invoke_request():
     # Verify output_format is not in the request
     assert "output_format" not in result, \
         f"output_format should be removed for Bedrock Invoke, got keys: {result.keys()}"
+
+
+def test_opus_4_6_max_tokens_does_not_emit_max_tokens_to_sample():
+    """
+    Regression test for Bedrock Invoke + Claude Opus 4.6.
+
+    OpenAI `max_tokens` should not produce legacy `max_tokens_to_sample` in the
+    payload, otherwise Bedrock rejects the request with:
+    "max_tokens_to_sample: Extra inputs are not permitted".
+    """
+    config = AmazonAnthropicClaudeConfig()
+
+    optional_params = config.map_openai_params(
+        non_default_params={"max_tokens": 1000},
+        optional_params={"max_tokens_to_sample": 123},
+        model="claude-opus-4-6",
+        drop_params=False,
+    )
+
+    assert optional_params.get("max_tokens") == 1000
+    assert "max_tokens_to_sample" not in optional_params

@@ -42,6 +42,13 @@ class AmazonAnthropicClaudeConfig(AmazonInvokeConfig, AnthropicConfig):
 
     anthropic_version: str = "bedrock-2023-05-31"
 
+    @staticmethod
+    def _is_opus_4_6_model(model: str) -> bool:
+        model_lower = model.lower()
+        return any(
+            v in model_lower for v in ("opus-4-6", "opus_4_6", "opus-4.6", "opus_4.6")
+        )
+
     @property
     def custom_llm_provider(self) -> Optional[str]:
         return "bedrock"
@@ -71,6 +78,11 @@ class AmazonAnthropicClaudeConfig(AmazonInvokeConfig, AnthropicConfig):
             model,
             drop_params,
         )
+
+        # Bedrock Invoke Opus 4.6 rejects legacy max_tokens_to_sample.
+        # Keep only the messages API field (max_tokens) for this model family.
+        if self._is_opus_4_6_model(original_model):
+            optional_params.pop("max_tokens_to_sample", None)
 
         # Restore original model name
         model = original_model
