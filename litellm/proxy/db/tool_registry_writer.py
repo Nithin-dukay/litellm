@@ -83,7 +83,7 @@ async def batch_upsert_tools(
         data = [item for item in items if item.get("tool_name")]
         if not data:
             return
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         table = prisma_client.db.litellm_tooltable
         for item in data:
             tool_name = item.get("tool_name", "")
@@ -113,7 +113,6 @@ async def batch_upsert_tools(
                     },
                     "update": {
                         "call_count": {"increment": 1},
-                        "updated_at": now,
                         "last_used_at": now,
                     },
                 },
@@ -123,7 +122,9 @@ async def batch_upsert_tools(
         )
     except Exception as e:
         verbose_proxy_logger.error(
-            "tool_registry_writer batch_upsert_tools error: %s", e
+            "tool_registry_writer batch_upsert_tools error (sample tool_name=%s): %s",
+            data[0].get("tool_name") if data else None,
+            e,
         )
 
 
