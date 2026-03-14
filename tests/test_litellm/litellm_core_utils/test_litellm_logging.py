@@ -554,6 +554,41 @@ def test_get_user_agent_tags():
     assert "User-Agent: litellm/0.1.0" in tags
 
 
+def test_get_user_agent_tags_case_insensitive_header_key():
+    from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
+
+    for header_key in ["User-Agent", "USER-AGENT", "UsEr-AgEnT"]:
+        tags = StandardLoggingPayloadSetup._get_user_agent_tags(
+            proxy_server_request={
+                "headers": {
+                    header_key: "pydantic-ai/1.0.0",
+                }
+            }
+        )
+
+        assert "User-Agent: pydantic-ai" in tags
+        assert "User-Agent: pydantic-ai/1.0.0" in tags
+
+
+def test_get_user_agent_tags_disabled_flag_returns_none():
+    import litellm
+    from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
+
+    original_value = litellm.disable_add_user_agent_to_request_tags
+    litellm.disable_add_user_agent_to_request_tags = True
+    try:
+        tags = StandardLoggingPayloadSetup._get_user_agent_tags(
+            proxy_server_request={
+                "headers": {
+                    "User-Agent": "pydantic-ai/1.0.0",
+                }
+            }
+        )
+        assert tags is None
+    finally:
+        litellm.disable_add_user_agent_to_request_tags = original_value
+
+
 def test_get_request_tags():
     from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
 
