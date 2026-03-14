@@ -5062,18 +5062,23 @@ class StandardLoggingPayloadSetup:
         user_agent_tags: Optional[List[str]] = None
         headers = proxy_server_request.get("headers", {})
         if headers is not None and isinstance(headers, dict):
-            if "user-agent" in headers:
-                user_agent = headers["user-agent"]
+            # HTTP headers are case-insensitive, so we need to do a case-insensitive lookup
+            user_agent = None
+            for header_name, header_value in headers.items():
+                if header_name.lower() == "user-agent":
+                    user_agent = header_value
+                    break
+
+            if user_agent is not None:
+                if user_agent_tags is None:
+                    user_agent_tags = []
+                user_agent_part: Optional[str] = None
+                if "/" in user_agent:
+                    user_agent_part = user_agent.split("/")[0]
+                if user_agent_part is not None:
+                    user_agent_tags.append("User-Agent: " + user_agent_part)
                 if user_agent is not None:
-                    if user_agent_tags is None:
-                        user_agent_tags = []
-                    user_agent_part: Optional[str] = None
-                    if "/" in user_agent:
-                        user_agent_part = user_agent.split("/")[0]
-                    if user_agent_part is not None:
-                        user_agent_tags.append("User-Agent: " + user_agent_part)
-                    if user_agent is not None:
-                        user_agent_tags.append("User-Agent: " + user_agent)
+                    user_agent_tags.append("User-Agent: " + user_agent)
         return user_agent_tags
 
     @staticmethod
@@ -5093,7 +5098,13 @@ class StandardLoggingPayloadSetup:
 
         header_tags = []
         for header_name in extra_headers:
-            header_value = headers.get(header_name)
+            # HTTP headers are case-insensitive, so we need to do a case-insensitive lookup
+            header_value = None
+            for hdr_name, hdr_value in headers.items():
+                if hdr_name.lower() == header_name.lower():
+                    header_value = hdr_value
+                    break
+
             if header_value:
                 header_tags.append(f"{header_name}: {header_value}")
 

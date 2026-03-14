@@ -554,6 +554,59 @@ def test_get_user_agent_tags():
     assert "User-Agent: litellm/0.1.0" in tags
 
 
+def test_get_user_agent_tags_case_insensitive():
+    """Test that User-Agent header lookup is case-insensitive (Issue #23553)."""
+    from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
+
+    # Test with capitalized "User-Agent"
+    tags = StandardLoggingPayloadSetup._get_user_agent_tags(
+        proxy_server_request={
+            "headers": {
+                "User-Agent": "pydantic-ai/1.0.0",
+            }
+        }
+    )
+    assert tags is not None
+    assert "User-Agent: pydantic-ai" in tags
+    assert "User-Agent: pydantic-ai/1.0.0" in tags
+
+    # Test with all uppercase "USER-AGENT"
+    tags = StandardLoggingPayloadSetup._get_user_agent_tags(
+        proxy_server_request={
+            "headers": {
+                "USER-AGENT": "test-client/2.0.0",
+            }
+        }
+    )
+    assert tags is not None
+    assert "User-Agent: test-client" in tags
+    assert "User-Agent: test-client/2.0.0" in tags
+
+    # Test with mixed case "UsEr-AgEnT"
+    tags = StandardLoggingPayloadSetup._get_user_agent_tags(
+        proxy_server_request={
+            "headers": {
+                "UsEr-AgEnT": "mixed-case/3.0.0",
+            }
+        }
+    )
+    assert tags is not None
+    assert "User-Agent: mixed-case" in tags
+    assert "User-Agent: mixed-case/3.0.0" in tags
+
+    # Test with lowercase "user-agent" (original behavior)
+    tags = StandardLoggingPayloadSetup._get_user_agent_tags(
+        proxy_server_request={
+            "headers": {
+                "user-agent": "lowercase/4.0.0",
+            }
+        }
+    )
+    assert tags is not None
+    assert "User-Agent: lowercase" in tags
+    assert "User-Agent: lowercase/4.0.0" in tags
+
+
 def test_get_request_tags():
     from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
 
@@ -804,6 +857,72 @@ def test_get_extra_header_tags():
         assert len(result) == 1
         assert "x-custom: my-value" in result
         assert "x-empty:" not in str(result)
+
+    finally:
+        # Restore original value
+        if original_extra_headers is not None:
+            litellm.extra_spend_tag_headers = original_extra_headers
+        else:
+            # Remove the attribute if it didn't exist before
+            if hasattr(litellm, "extra_spend_tag_headers"):
+                delattr(litellm, "extra_spend_tag_headers")
+
+
+def test_get_extra_header_tags_case_insensitive():
+    """Test that _get_extra_header_tags handles headers case-insensitively (related to Issue #23553)."""
+    import litellm
+    from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
+
+    # Store original value to restore later
+    original_extra_headers = getattr(litellm, "extra_spend_tag_headers", None)
+
+    try:
+        # Test case: extra_spend_tag_headers configured with lowercase names,
+        # but request headers use different case variations
+        litellm.extra_spend_tag_headers = ["x-custom-header", "x-tenant-id"]
+
+        # Test with capitalized headers
+        result = StandardLoggingPayloadSetup._get_extra_header_tags(
+            proxy_server_request={
+                "headers": {
+                    "X-Custom-Header": "custom-value-1",
+                    "X-Tenant-Id": "tenant-123",
+                    "Content-Type": "application/json",
+                }
+            }
+        )
+        assert result is not None
+        assert len(result) == 2
+        assert "x-custom-header: custom-value-1" in result
+        assert "x-tenant-id: tenant-123" in result
+
+        # Test with all uppercase headers
+        result = StandardLoggingPayloadSetup._get_extra_header_tags(
+            proxy_server_request={
+                "headers": {
+                    "X-CUSTOM-HEADER": "custom-value-2",
+                    "X-TENANT-ID": "tenant-456",
+                }
+            }
+        )
+        assert result is not None
+        assert len(result) == 2
+        assert "x-custom-header: custom-value-2" in result
+        assert "x-tenant-id: tenant-456" in result
+
+        # Test with mixed case headers
+        result = StandardLoggingPayloadSetup._get_extra_header_tags(
+            proxy_server_request={
+                "headers": {
+                    "x-CuStOm-HeAdEr": "custom-value-3",
+                    "X-tEnAnT-iD": "tenant-789",
+                }
+            }
+        )
+        assert result is not None
+        assert len(result) == 2
+        assert "x-custom-header: custom-value-3" in result
+        assert "x-tenant-id: tenant-789" in result
 
     finally:
         # Restore original value
