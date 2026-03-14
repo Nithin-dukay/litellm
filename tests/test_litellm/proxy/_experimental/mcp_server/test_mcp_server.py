@@ -2320,3 +2320,179 @@ async def test_get_tools_from_mcp_servers_injects_stored_oauth2_token():
     assert call_kwargs["extra_headers"] == {"Authorization": f"Bearer {STORED_TOKEN}"}
 
     assert tools == [tool_1]
+
+
+@pytest.mark.asyncio
+async def test_filter_tools_by_disallowed_tools():
+    """Test that filter_tools_by_allowed_tools filters disallowed tools correctly"""
+    from mcp.types import Tool
+
+    from litellm.proxy._experimental.mcp_server.server import (
+        filter_tools_by_allowed_tools,
+    )
+    from litellm.types.mcp import MCPTransport
+    from litellm.types.mcp_server.mcp_server_manager import MCPServer
+
+    # Test disallowed_tools filtering
+    mcp_server = MCPServer(
+        server_id="datadog_mcp",
+        name="datadog_mcp",
+        alias="datadog_mcp",
+        transport=MCPTransport.http,
+        allowed_tools=None,
+        disallowed_tools=["create_datadog_notebook", "edit_datadog_notebook"],
+    )
+    tools_to_filter = [
+        Tool(
+            name="datadog_mcp-create_datadog_notebook",
+            title=None,
+            description="Create a Datadog notebook",
+            inputSchema={
+                "type": "object",
+                "properties": {"name": {"type": "string", "description": ""}},
+                "required": ["name"],
+            },
+            outputSchema=None,
+            annotations=None,
+        ),
+        Tool(
+            name="datadog_mcp-edit_datadog_notebook",
+            title=None,
+            description="Edit a Datadog notebook",
+            inputSchema={
+                "type": "object",
+                "properties": {"id": {"type": "string", "description": ""}},
+                "required": ["id"],
+            },
+            outputSchema=None,
+            annotations=None,
+        ),
+        Tool(
+            name="datadog_mcp-get_datadog_notebook",
+            title=None,
+            description="Get a Datadog notebook",
+            inputSchema={
+                "type": "object",
+                "properties": {"id": {"type": "string", "description": ""}},
+                "required": ["id"],
+            },
+            outputSchema=None,
+            annotations=None,
+        ),
+        Tool(
+            name="datadog_mcp-search_datadog_logs",
+            title=None,
+            description="Search Datadog logs",
+            inputSchema={
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": ""}},
+                "required": ["query"],
+            },
+            outputSchema=None,
+            annotations=None,
+        ),
+    ]
+
+    filtered_tools = filter_tools_by_allowed_tools(tools_to_filter, mcp_server)
+
+    # Should exclude the two disallowed tools
+    assert len(filtered_tools) == 2
+    assert filtered_tools[0].name == "datadog_mcp-get_datadog_notebook"
+    assert filtered_tools[1].name == "datadog_mcp-search_datadog_logs"
+
+
+@pytest.mark.asyncio
+async def test_get_tools_for_single_server_with_disallowed_tools():
+    """
+    Test that _get_tools_for_single_server correctly filters out disallowed tools.
+
+    This is a regression test for Issue #23549 where disallowed_tools were not
+    being filtered when listing tools via the API/UI.
+    """
+    try:
+        from mcp.types import Tool
+
+        from litellm.proxy._experimental.mcp_server.mcp_server_manager import (
+            global_mcp_server_manager,
+        )
+        from litellm.proxy._experimental.mcp_server.rest_endpoints import (
+            _get_tools_for_single_server,
+        )
+        from litellm.types.mcp import MCPTransport
+        from litellm.types.mcp_server.mcp_server_manager import MCPServer
+
+        # Create a mock server with disallowed_tools
+        test_server = MCPServer(
+            server_id="test_datadog",
+            name="test_datadog",
+            transport=MCPTransport.http,
+            allowed_tools=None,  # Important: allowed_tools is None
+            disallowed_tools=["create_datadog_notebook", "edit_datadog_notebook"],
+        )
+
+        # Mock tools that would be returned from the MCP server
+        mock_tools = [
+            Tool(
+                name="test_datadog-create_datadog_notebook",
+                title=None,
+                description="Create a Datadog notebook",
+                inputSchema={"type": "object", "properties": {}},
+                outputSchema=None,
+                annotations=None,
+            ),
+            Tool(
+                name="test_datadog-edit_datadog_notebook",
+                title=None,
+                description="Edit a Datadog notebook",
+                inputSchema={"type": "object", "properties": {}},
+                outputSchema=None,
+                annotations=None,
+            ),
+            Tool(
+                name="test_datadog-get_datadog_notebook",
+                title=None,
+                description="Get a Datadog notebook",
+                inputSchema={"type": "object", "properties": {}},
+                outputSchema=None,
+                annotations=None,
+            ),
+            Tool(
+                name="test_datadog-search_datadog_logs",
+                title=None,
+                description="Search Datadog logs",
+                inputSchema={"type": "object", "properties": {}},
+                outputSchema=None,
+                annotations=None,
+            ),
+        ]
+
+        # Patch the _get_tools_from_server method to return our mock tools
+        with patch.object(
+            global_mcp_server_manager,
+            "_get_tools_from_server",
+            new=AsyncMock(return_value=mock_tools),
+        ):
+            # Call the function that the UI uses to get tools
+            result = await _get_tools_for_single_server(
+                server=test_server,
+                server_auth_header=None,
+                raw_headers=None,
+                user_api_key_auth=None,
+                extra_headers=None,
+            )
+
+        # Before the fix, all 4 tools would be returned
+        # After the fix, only 2 tools should be returned (disallowed ones filtered out)
+        assert len(result) == 2
+
+        # Verify the correct tools are returned
+        tool_names = [tool["name"] for tool in result]
+        assert "test_datadog-get_datadog_notebook" in tool_names
+        assert "test_datadog-search_datadog_logs" in tool_names
+
+        # Verify disallowed tools are NOT in the result
+        assert "test_datadog-create_datadog_notebook" not in tool_names
+        assert "test_datadog-edit_datadog_notebook" not in tool_names
+
+    except ImportError:
+        pytest.skip("MCP dependencies not available")
