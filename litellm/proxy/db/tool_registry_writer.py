@@ -83,8 +83,38 @@ async def batch_upsert_tools(
         data = [item for item in items if item.get("tool_name")]
         if not data:
             return
-        now = datetime.now(timezone.utc)
-        table = prisma_client.db.litellm_tooltable
+
+        policy_cols_query = '''
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'LiteLLM_ToolTable'
+              AND table_schema = ANY(current_schemas(false))
+              AND column_name IN ('input_policy', 'output_policy', 'call_policy')
+        '''
+        policy_cols_result = await prisma_client.db.query_raw(policy_cols_query)
+        policy_cols = {
+            getattr(row, "column_name", None)
+            if not isinstance(row, dict)
+            else row.get("column_name")
+            for row in (policy_cols_result or [])
+        }
+
+        use_split_policies = {
+            "input_policy",
+            "output_policy",
+        }.issubset(policy_cols)
+        use_legacy_call_policy = "call_policy" in policy_cols and not use_split_policies
+
+        if use_split_policies:
+            policy_insert_cols = '"input_policy", "output_policy", '
+            policy_insert_vals = "'untrusted', 'untrusted', "
+        elif use_legacy_call_policy:
+            policy_insert_cols = '"call_policy", '
+            policy_insert_vals = "'untrusted', "
+        else:
+            policy_insert_cols = '"input_policy", "output_policy", '
+            policy_insert_vals = "'untrusted', 'untrusted', "
+
         for item in data:
             tool_name = item.get("tool_name", "")
             origin = item.get("origin") or "user_defined"
@@ -93,31 +123,63 @@ async def batch_upsert_tools(
             team_id = item.get("team_id")
             key_alias = item.get("key_alias")
             user_agent = item.get("user_agent")
-            await table.upsert(
-                where={"tool_name": tool_name},
-                data={
-                    "create": {
-                        "tool_id": str(uuid.uuid4()),
-                        "tool_name": tool_name,
-                        "origin": origin,
-                        "input_policy": "untrusted",
-                        "output_policy": "untrusted",
-                        "call_count": 1,
-                        "created_by": created_by,
-                        "updated_by": created_by,
-                        "key_hash": key_hash,
-                        "team_id": team_id,
-                        "key_alias": key_alias,
-                        "user_agent": user_agent,
-                        "last_used_at": now,
-                    },
-                    "update": {
-                        "call_count": {"increment": 1},
-                        "updated_at": now,
-                        "last_used_at": now,
-                    },
-                },
+
+            upsert_sql = f'''
+                INSERT INTO "LiteLLM_ToolTable" (
+                    "tool_id",
+                    "tool_name",
+                    "origin",
+                    {policy_insert_cols}
+                    "call_count",
+                    "created_by",
+                    "updated_by",
+                    "key_hash",
+                    "team_id",
+                    "key_alias",
+                    "user_agent",
+                    "created_at",
+                    "updated_at",
+                    "last_used_at"
+                )
+                VALUES (
+                    $1,
+                    $2,
+                    $3,
+                    {policy_insert_vals}
+                    1,
+                    $4,
+                    $4,
+                    $5,
+                    $6,
+                    $7,
+                    $8,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT ("tool_name") DO UPDATE SET
+                    "call_count" = "LiteLLM_ToolTable"."call_count" + 1,
+                    "origin" = COALESCE(EXCLUDED."origin", "LiteLLM_ToolTable"."origin"),
+                    "updated_by" = EXCLUDED."updated_by",
+                    "key_hash" = COALESCE(EXCLUDED."key_hash", "LiteLLM_ToolTable"."key_hash"),
+                    "team_id" = COALESCE(EXCLUDED."team_id", "LiteLLM_ToolTable"."team_id"),
+                    "key_alias" = COALESCE(EXCLUDED."key_alias", "LiteLLM_ToolTable"."key_alias"),
+                    "user_agent" = COALESCE(EXCLUDED."user_agent", "LiteLLM_ToolTable"."user_agent"),
+                    "updated_at" = CURRENT_TIMESTAMP,
+                    "last_used_at" = CURRENT_TIMESTAMP
+            '''
+            await prisma_client.db.execute_raw(
+                upsert_sql,
+                str(uuid.uuid4()),
+                tool_name,
+                origin,
+                created_by,
+                key_hash,
+                team_id,
+                key_alias,
+                user_agent,
             )
+
         verbose_proxy_logger.debug(
             "tool_registry_writer: upserted %d tool(s)", len(data)
         )
