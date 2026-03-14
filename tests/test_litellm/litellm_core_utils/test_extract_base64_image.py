@@ -58,6 +58,28 @@ class TestExtractBase64Data:
         expected = "abc+def/ghi==="
         assert _extract_base64_data(data_url) == expected
 
+    def test_base64_data_with_url_fragment(self):
+        """Test extracting base64 data from URL with fragment (e.g., #transform=inline)
+
+        This test verifies the fix for issue #23583 where Fireworks adds #transform=inline
+        to image URLs, causing base64 decoding errors due to incorrect padding.
+
+        Related issue: https://github.com/BerriAI/litellm/issues/23583
+        """
+        data_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk#transform=inline"
+        expected = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+        assert _extract_base64_data(data_url) == expected
+
+    def test_base64_data_with_query_string_and_fragment(self):
+        """Test extracting base64 data with multiple URL components
+
+        Verifies that fragments are stripped even when base64 data might contain
+        characters that look like query strings or other URL components.
+        """
+        data_url = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD#some-fragment"
+        expected = "/9j/4AAQSkZJRgABAQAAAQABAAD"
+        assert _extract_base64_data(data_url) == expected
+
 
 class TestExtractImagesFromMessage:
     """Tests for extract_images_from_message function"""

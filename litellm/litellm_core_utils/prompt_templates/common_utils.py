@@ -1258,7 +1258,13 @@ def _extract_base64_data(image_url: str) -> str:
         The base64 data if it's a data URL, otherwise the original URL
     """
     if image_url.startswith("data:") and ";base64," in image_url:
-        return image_url.split(";base64,", 1)[1]
+        base64_data = image_url.split(";base64,", 1)[1]
+        # Strip URL fragment (e.g., #transform=inline) if present
+        # Fragments can cause base64 decoding errors ("Incorrect padding")
+        # Relevant issue: https://github.com/BerriAI/litellm/issues/23583
+        if "#" in base64_data:
+            base64_data = base64_data.split("#", 1)[0]
+        return base64_data
     return image_url
 
 
