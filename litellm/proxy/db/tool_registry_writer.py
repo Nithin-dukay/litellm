@@ -6,7 +6,6 @@ Admins use the management endpoints to read and update input_policy / output_pol
 """
 
 import uuid
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 from litellm._logging import verbose_proxy_logger
@@ -83,7 +82,6 @@ async def batch_upsert_tools(
         data = [item for item in items if item.get("tool_name")]
         if not data:
             return
-        now = datetime.now(timezone.utc)
         table = prisma_client.db.litellm_tooltable
         for item in data:
             tool_name = item.get("tool_name", "")
@@ -93,29 +91,37 @@ async def batch_upsert_tools(
             team_id = item.get("team_id")
             key_alias = item.get("key_alias")
             user_agent = item.get("user_agent")
+            
+            # Build create data - let Prisma handle created_at/updated_at via @default(now()) and @updatedAt
+            create_data = {
+                "tool_id": str(uuid.uuid4()),
+                "tool_name": tool_name,
+                "origin": origin,
+                "input_policy": "untrusted",
+                "output_policy": "untrusted",
+                "call_count": 1,
+                "created_by": created_by,
+                "updated_by": created_by,
+            }
+            if key_hash is not None:
+                create_data["key_hash"] = key_hash
+            if team_id is not None:
+                create_data["team_id"] = team_id
+            if key_alias is not None:
+                create_data["key_alias"] = key_alias
+            if user_agent is not None:
+                create_data["user_agent"] = user_agent
+            
+            # Build update data - Prisma @updatedAt handles updated_at automatically
+            update_data = {
+                "call_count": {"increment": 1},
+            }
+            
             await table.upsert(
                 where={"tool_name": tool_name},
                 data={
-                    "create": {
-                        "tool_id": str(uuid.uuid4()),
-                        "tool_name": tool_name,
-                        "origin": origin,
-                        "input_policy": "untrusted",
-                        "output_policy": "untrusted",
-                        "call_count": 1,
-                        "created_by": created_by,
-                        "updated_by": created_by,
-                        "key_hash": key_hash,
-                        "team_id": team_id,
-                        "key_alias": key_alias,
-                        "user_agent": user_agent,
-                        "last_used_at": now,
-                    },
-                    "update": {
-                        "call_count": {"increment": 1},
-                        "updated_at": now,
-                        "last_used_at": now,
-                    },
+                    "create": create_data,
+                    "update": update_data,
                 },
             )
         verbose_proxy_logger.debug(
@@ -171,7 +177,6 @@ async def update_tool_policy(
     """Update input_policy and/or output_policy for a tool. Upserts the row if it does not exist yet."""
     try:
         _updated_by = updated_by or "system"
-        now = datetime.now(timezone.utc)
 
         create_data: dict = {
             "tool_id": str(uuid.uuid4()),
@@ -180,12 +185,9 @@ async def update_tool_policy(
             "output_policy": output_policy or "untrusted",
             "created_by": _updated_by,
             "updated_by": _updated_by,
-            "created_at": now,
-            "updated_at": now,
         }
         update_data: dict = {
             "updated_by": _updated_by,
-            "updated_at": now,
         }
         if input_policy is not None:
             update_data["input_policy"] = input_policy
