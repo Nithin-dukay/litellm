@@ -20,10 +20,12 @@ const FILTER_KEYS = {
   KEY_ALIAS: "Key Alias",
   ERROR_CODE: "Error Code",
   ERROR_MESSAGE: "Error Message",
+  TAGS: "Tags",
 } as const;
 
 export type FilterKey = keyof typeof FILTER_KEYS;
-export type LogFilterState = Record<(typeof FILTER_KEYS)[FilterKey], string>;
+export type LogFilterValue = string | string[];
+export type LogFilterState = Record<(typeof FILTER_KEYS)[FilterKey], LogFilterValue>;
 
 export function useLogFilterLogic({
   logs,
@@ -64,6 +66,7 @@ export function useLogFilterLogic({
       [FILTER_KEYS.KEY_ALIAS]: "",
       [FILTER_KEYS.ERROR_CODE]: "",
       [FILTER_KEYS.ERROR_MESSAGE]: "",
+      [FILTER_KEYS.TAGS]: [],
     }),
     [],
   );
@@ -122,6 +125,27 @@ export function useLogFilterLogic({
     },
     [accessToken, startTime, endTime, isCustomDate, pageSize, sortBy, sortOrder],
   );
+
+  const selectedTags = useMemo<string[]>(() => {
+    const tags = filters[FILTER_KEYS.TAGS];
+    return Array.isArray(tags) ? tags : [];
+  }, [filters]);
+
+  const availableTags = useMemo<Array<{ label: string; value: string }>>(() => {
+    if (!logs?.data?.length) return [];
+    const allTags = new Set<string>();
+
+    logs.data.forEach((log) => {
+      if (!log.request_tags) return;
+      Object.entries(log.request_tags).forEach(([tagKey, tagValue]) => {
+        allTags.add(`${tagKey}:${String(tagValue)}`);
+      });
+    });
+
+    return Array.from(allTags)
+      .sort((a, b) => a.localeCompare(b))
+      .map((tag) => ({ label: tag, value: tag }));
+  }, [logs]);
 
   const debouncedSearch = useMemo(
     () => debounce((filters: LogFilterState, page: number) => performSearch(filters, page), 300),
@@ -215,6 +239,16 @@ export function useLogFilterLogic({
       });
     }
 
+    if (selectedTags.length > 0) {
+      filteredData = filteredData.filter((log) => {
+        if (!log.request_tags) return false;
+        const logTags = new Set(
+          Object.entries(log.request_tags).map(([tagKey, tagValue]) => `${tagKey}:${String(tagValue)}`),
+        );
+        return selectedTags.some((selectedTag) => logTags.has(selectedTag));
+      });
+    }
+
     return {
       data: filteredData,
       total: logs.total,
@@ -222,7 +256,7 @@ export function useLogFilterLogic({
       page_size: logs.page_size,
       total_pages: logs.total_pages,
     };
-  }, [logs, filters, hasBackendFilters]);
+  }, [logs, filters, hasBackendFilters, selectedTags]);
 
   // Choose which filtered logs to expose: backend result when active, otherwise client-derived
   const filteredLogs: PaginatedResponse = useMemo(() => {
@@ -301,6 +335,7 @@ export function useLogFilterLogic({
     filteredLogs,
     hasBackendFilters,
     allTeams,
+    availableTags,
     handleFilterChange,
     handleFilterReset,
   };

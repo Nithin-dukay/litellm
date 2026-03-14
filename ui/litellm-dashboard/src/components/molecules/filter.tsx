@@ -13,13 +13,14 @@ export interface FilterOption {
   name: string;
   label?: string;
   isSearchable?: boolean;
+  isMultiSelect?: boolean;
   searchFn?: (searchText: string) => Promise<Array<{ label: string; value: string }>>;
   options?: Array<{ label: string; value: string }>;
   customComponent?: React.ComponentType<FilterOptionCustomComponentProps>;
 }
 
-interface FilterValues {
-  [key: string]: string;
+export interface FilterValues {
+  [key: string]: string | string[];
 }
 
 interface FilterComponentProps {
@@ -103,7 +104,7 @@ const FilterComponent: React.FC<FilterComponentProps> = ({
     }
   }, [showFilters, options, loadInitialOptions, initialOptionsLoaded]);
 
-  const handleFilterChange = (name: string, value: string) => {
+  const handleFilterChange = (name: string, value: string | string[]) => {
     const newValues = {
       ...tempValues,
       [name]: value,
@@ -140,6 +141,7 @@ const FilterComponent: React.FC<FilterComponentProps> = ({
     "Error Message",
     "Key Hash",
     "Model",
+    "Tags",
   ];
 
   return (
@@ -166,6 +168,7 @@ const FilterComponent: React.FC<FilterComponentProps> = ({
                 <label className="text-sm text-gray-600">{option.label || option.name}</label>
                 {option.isSearchable ? (
                   <Select
+                    mode={option.isMultiSelect ? "multiple" : undefined}
                     showSearch
                     className="w-full"
                     placeholder={`Search ${option.label || option.name}...`}

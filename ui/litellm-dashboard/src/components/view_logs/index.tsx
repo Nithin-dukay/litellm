@@ -242,6 +242,7 @@ export default function SpendLogsTable({
     filteredLogs,
     hasBackendFilters,
     allTeams: hookAllTeams,
+    availableTags,
     handleFilterChange,
     handleFilterReset: handleFilterResetFromHook,
   } = useLogFilterLogic({
@@ -460,6 +461,17 @@ export default function SpendLogsTable({
       name: "Key Hash",
       label: "Key Hash",
       isSearchable: false,
+    },
+    {
+      name: "Tags",
+      label: "Tags",
+      isSearchable: true,
+      isMultiSelect: true,
+      searchFn: async (searchText: string) => {
+        if (!searchText) return availableTags;
+        const lowerSearchText = searchText.toLowerCase();
+        return availableTags.filter((tag) => tag.label.toLowerCase().includes(lowerSearchText));
+      },
     },
     {
       name: "Error Message",
