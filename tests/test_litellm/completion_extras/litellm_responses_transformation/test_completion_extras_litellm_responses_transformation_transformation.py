@@ -1995,3 +1995,212 @@ def test_map_optional_params_preserves_reasoning_summary():
     assert responses_api_request["reasoning"] == {"effort": "high", "summary": "detailed"}
     assert responses_api_request["reasoning"]["effort"] == "high"
     assert responses_api_request["reasoning"]["summary"] == "detailed"
+
+
+# =============================================================================
+# Tests for issue #23588: file type translated to input_file instead of input_text
+# =============================================================================
+
+
+def test_convert_file_content_to_input_file_with_file_data():
+    """
+    Test that Chat Completions 'file' content type is correctly translated to
+    Responses API 'input_file' format when using file_data (base64 inline).
+
+    Regression test for issue #23588 where file content was stringified and sent
+    as input_text instead of being properly mapped to input_file.
+
+    Chat Completions format:
+        {"type": "file", "file": {"file_data": "data:application/pdf;base64,...", "filename": "doc.pdf"}}
+
+    Responses API format:
+        {"type": "input_file", "file_data": "data:application/pdf;base64,...", "filename": "doc.pdf"}
+    """
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    test_file_data = "data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago="
+    test_filename = "secret-word.pdf"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What is the secret word in this PDF?"},
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": test_file_data,
+                        "filename": test_filename,
+                    },
+                },
+            ],
+        },
+    ]
+
+    response, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    assert len(response) == 1
+    msg = response[0]
+    assert msg["type"] == "message"
+    assert msg["role"] == "user"
+
+    content = msg["content"]
+    assert len(content) == 2
+
+    # First item should be input_text
+    assert content[0]["type"] == "input_text"
+    assert content[0]["text"] == "What is the secret word in this PDF?"
+
+    # Second item should be input_file, NOT input_text
+    file_item = content[1]
+    assert file_item["type"] == "input_file", (
+        f"Expected type 'input_file', got '{file_item.get('type')}'. "
+        "File content must not be stringified as input_text."
+    )
+    assert file_item["file_data"] == test_file_data
+    assert file_item["filename"] == test_filename
+
+
+def test_convert_file_content_to_input_file_with_file_id():
+    """
+    Test that Chat Completions 'file' content type with file_id is correctly
+    translated to Responses API 'input_file' format.
+
+    Chat Completions format:
+        {"type": "file", "file": {"file_id": "file-abc123"}}
+
+    Responses API format:
+        {"type": "input_file", "file_id": "file-abc123"}
+    """
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Summarize this file."},
+                {
+                    "type": "file",
+                    "file": {
+                        "file_id": "file-abc123",
+                    },
+                },
+            ],
+        },
+    ]
+
+    response, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    content = response[0]["content"]
+    assert len(content) == 2
+
+    file_item = content[1]
+    assert file_item["type"] == "input_file"
+    assert file_item["file_id"] == "file-abc123"
+    assert "file_data" not in file_item
+
+
+def test_convert_file_content_to_input_file_with_all_fields():
+    """
+    Test that all relevant fields (file_data, file_id, filename) are copied
+    from the nested file dict to the flat input_file format.
+    """
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": "data:application/pdf;base64,abc123",
+                        "file_id": "file-xyz789",
+                        "filename": "report.pdf",
+                    },
+                },
+            ],
+        },
+    ]
+
+    response, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    file_item = response[0]["content"][0]
+    assert file_item["type"] == "input_file"
+    assert file_item["file_data"] == "data:application/pdf;base64,abc123"
+    assert file_item["file_id"] == "file-xyz789"
+    assert file_item["filename"] == "report.pdf"
+
+
+def test_convert_file_content_with_empty_file_dict():
+    """
+    Test that a file content item with an empty or missing file dict
+    still produces an input_file item without erroring.
+    """
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "file", "file": {}},
+            ],
+        },
+    ]
+
+    response, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    file_item = response[0]["content"][0]
+    assert file_item["type"] == "input_file"
+    # No file_data, file_id, or filename keys should be present
+    assert "file_data" not in file_item
+    assert "file_id" not in file_item
+    assert "filename" not in file_item
+
+
+def test_input_file_passthrough_still_works():
+    """
+    Test that content already in Responses API 'input_file' format is passed
+    through without modification (existing behavior preserved).
+    """
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_file",
+                    "file_data": "data:application/pdf;base64,abc123",
+                    "filename": "doc.pdf",
+                },
+            ],
+        },
+    ]
+
+    response, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    file_item = response[0]["content"][0]
+    assert file_item["type"] == "input_file"
+    assert file_item["file_data"] == "data:application/pdf;base64,abc123"
+    assert file_item["filename"] == "doc.pdf"

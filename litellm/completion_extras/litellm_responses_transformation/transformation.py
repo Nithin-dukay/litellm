@@ -623,6 +623,33 @@ class LiteLLMResponsesTransformationHandler(CompletionTransformationBridge):
 
         return image_param
 
+    def _convert_file_to_input_file(
+        self, item: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Convert a Chat Completions file content item to Responses API input_file format.
+
+        Chat Completions format:
+            {"type": "file", "file": {"file_data": "data:...", "filename": "...", "file_id": "..."}}
+
+        Responses API format:
+            {"type": "input_file", "file_data": "data:...", "filename": "..."}
+            or {"type": "input_file", "file_id": "..."}
+        """
+        file_content = item.get("file", {})
+        if not isinstance(file_content, dict):
+            file_content = {}
+
+        result: Dict[str, Any] = {"type": "input_file"}
+
+        # Copy relevant keys from the nested file dict to the top-level
+        for key in ("file_data", "file_id", "filename"):
+            value = file_content.get(key)
+            if value is not None:
+                result[key] = value
+
+        return result
+
     def _convert_content_to_responses_format(
         self,
         content: Optional[
@@ -683,6 +710,13 @@ class LiteLLMResponsesTransformationHandler(CompletionTransformationBridge):
                         result.append(converted)
                         verbose_logger.debug(
                             f"Chat provider:   image_url -> {converted}"
+                        )
+                    elif original_type == "file":
+                        # Map Chat Completions file type to Responses API input_file
+                        converted = self._convert_file_to_input_file(item)
+                        result.append(converted)
+                        verbose_logger.debug(
+                            f"Chat provider:   file -> {converted}"
                         )
                     else:
                         # Try to map other types to responses API format
