@@ -191,3 +191,66 @@ def test_transform_messages_helper_removes_provider_specific_fields():
     out = config._transform_messages_helper(messages, model="fireworks/test", litellm_params={})
     for msg in out:
         assert "provider_specific_fields" not in msg
+
+
+def test_transform_messages_helper_normalizes_unpadded_data_url_image():
+    config = FireworksAIConfig()
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": "data:image/png;base64,Zm8",
+                }
+            ],
+        }
+    ]
+
+    out = config._transform_messages_helper(
+        messages, model="accounts/fireworks/models/kimi-k2-vision", litellm_params={}
+    )
+    transformed = out[0]["content"][0]["image_url"]
+    assert transformed == "data:image/png;base64,Zm8="
+
+
+def test_transform_messages_helper_normalizes_urlsafe_data_url_image():
+    config = FireworksAIConfig()
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": "data:image/png;base64,Zm9vLQ_",
+                }
+            ],
+        }
+    ]
+
+    out = config._transform_messages_helper(
+        messages, model="accounts/fireworks/models/kimi-k2-vision", litellm_params={}
+    )
+    transformed = out[0]["content"][0]["image_url"]
+    assert transformed == "data:image/png;base64,Zm9vLQ/="
+
+
+def test_transform_messages_helper_keeps_https_image_url_unchanged_for_vision_models():
+    config = FireworksAIConfig()
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": "https://example.com/image.png",
+                }
+            ],
+        }
+    ]
+
+    out = config._transform_messages_helper(
+        messages, model="accounts/fireworks/models/kimi-k2-vision", litellm_params={}
+    )
+    transformed = out[0]["content"][0]["image_url"]
+    assert transformed == "https://example.com/image.png"

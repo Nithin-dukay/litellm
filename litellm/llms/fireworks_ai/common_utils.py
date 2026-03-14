@@ -1,3 +1,4 @@
+import re
 from typing import List, Optional, Union
 
 from httpx import Headers
@@ -6,6 +7,30 @@ from litellm.secret_managers.main import get_secret_str
 from litellm.types.llms.openai import AllMessageValues
 
 from ..base_llm.chat.transformation import BaseLLMException
+
+_DATA_URL_BASE64_PATTERN = re.compile(r"^(data:[^;]+;base64,)(.*)$", re.IGNORECASE)
+
+
+def normalize_fireworks_base64_data_url(image_url: str) -> str:
+    """
+    Normalize base64 data URLs for Fireworks compatibility.
+
+    - Leaves non-data URLs unchanged.
+    - Converts URL-safe base64 chars to standard base64 chars.
+    - Adds missing '=' padding when required.
+    """
+    match = _DATA_URL_BASE64_PATTERN.match(image_url)
+    if not match:
+        return image_url
+
+    prefix, payload = match.groups()
+
+    normalized_payload = payload.replace("-", "+").replace("_", "/")
+    padding_needed = len(normalized_payload) % 4
+    if padding_needed:
+        normalized_payload += "=" * (4 - padding_needed)
+
+    return f"{prefix}{normalized_payload}"
 
 
 class FireworksAIException(BaseLLMException):

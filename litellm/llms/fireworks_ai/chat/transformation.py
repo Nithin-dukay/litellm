@@ -32,7 +32,7 @@ from litellm.utils import (
 )
 
 from ...openai.chat.gpt_transformation import OpenAIGPTConfig
-from ..common_utils import FireworksAIException
+from ..common_utils import FireworksAIException, normalize_fireworks_base64_data_url
 
 
 class FireworksAIConfig(OpenAIGPTConfig):
@@ -180,16 +180,24 @@ class FireworksAIConfig(OpenAIGPTConfig):
         - ignore if model is a vision model
         - ignore if user has disabled this feature
         """
-        if (
-            "vision" in model or disable_add_transform_inline_image_block
-        ):  # allow user to toggle this feature.
-            return content
         if isinstance(content["image_url"], str):
-            content["image_url"] = f"{content['image_url']}#transform=inline"
+            normalized_image_url = normalize_fireworks_base64_data_url(content["image_url"])
+            if (
+                "vision" in model or disable_add_transform_inline_image_block
+            ):  # allow user to toggle this feature.
+                content["image_url"] = normalized_image_url
+                return content
+            content["image_url"] = f"{normalized_image_url}#transform=inline"
+            return content
         elif isinstance(content["image_url"], dict):
-            content["image_url"][
-                "url"
-            ] = f"{content['image_url']['url']}#transform=inline"
+            image_url = content["image_url"]["url"]
+            normalized_image_url = normalize_fireworks_base64_data_url(image_url)
+            if (
+                "vision" in model or disable_add_transform_inline_image_block
+            ):  # allow user to toggle this feature.
+                content["image_url"]["url"] = normalized_image_url
+                return content
+            content["image_url"]["url"] = f"{normalized_image_url}#transform=inline"
         return content
 
     def _transform_tools(
