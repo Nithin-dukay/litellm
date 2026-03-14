@@ -85,7 +85,8 @@ async def test_batch_upsert_tools_calls_upsert():
     assert call_kw["data"]["create"]["output_policy"] == "untrusted"
     assert call_kw["data"]["create"]["call_count"] == 1
     assert call_kw["data"]["update"]["call_count"] == {"increment": 1}
-    assert "updated_at" in call_kw["data"]["update"]
+    # updated_at is auto-managed by Prisma @updatedAt decorator, should not be set manually
+    assert "updated_at" not in call_kw["data"]["update"]
 
 
 @pytest.mark.asyncio
