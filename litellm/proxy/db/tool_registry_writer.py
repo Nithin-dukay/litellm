@@ -113,7 +113,6 @@ async def batch_upsert_tools(
                     },
                     "update": {
                         "call_count": {"increment": 1},
-                        "updated_at": now,
                         "last_used_at": now,
                     },
                 },
@@ -171,7 +170,6 @@ async def update_tool_policy(
     """Update input_policy and/or output_policy for a tool. Upserts the row if it does not exist yet."""
     try:
         _updated_by = updated_by or "system"
-        now = datetime.now(timezone.utc)
 
         create_data: dict = {
             "tool_id": str(uuid.uuid4()),
@@ -180,12 +178,9 @@ async def update_tool_policy(
             "output_policy": output_policy or "untrusted",
             "created_by": _updated_by,
             "updated_by": _updated_by,
-            "created_at": now,
-            "updated_at": now,
         }
         update_data: dict = {
             "updated_by": _updated_by,
-            "updated_at": now,
         }
         if input_policy is not None:
             update_data["input_policy"] = input_policy
