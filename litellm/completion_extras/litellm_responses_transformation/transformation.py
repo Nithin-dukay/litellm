@@ -693,6 +693,19 @@ class LiteLLMResponsesTransformationHandler(CompletionTransformationBridge):
                             verbose_logger.debug(
                                 f"Chat provider:   image -> {converted}"
                             )
+                        elif item_type == "file":
+                            file_dict = item.get("file") or {}
+                            input_file: Dict[str, Any] = {"type": "input_file"}
+                            if file_dict.get("file_data"):
+                                input_file["file_data"] = file_dict.get("file_data")
+                            if file_dict.get("filename"):
+                                input_file["filename"] = file_dict.get("filename")
+                            if file_dict.get("file_id"):
+                                input_file["file_id"] = file_dict.get("file_id")
+                            result.append(input_file)
+                            verbose_logger.debug(
+                                f"Chat provider:   file -> {input_file}"
+                            )
                         elif item_type in [
                             "input_text",
                             "input_image",
