@@ -135,11 +135,15 @@ class VertexAIPartnerModels(VertexBase):
         try:
             vertex_httpx_logic = VertexLLM()
 
-            access_token, project_id = vertex_httpx_logic._ensure_access_token(
-                credentials=vertex_credentials,
-                project_id=vertex_project,
-                custom_llm_provider="vertex_ai",
-            )
+            has_authorization_header = headers is not None and "Authorization" in headers
+            access_token = None
+            project_id = vertex_project
+            if not has_authorization_header:
+                access_token, project_id = vertex_httpx_logic._ensure_access_token(
+                    credentials=vertex_credentials,
+                    project_id=vertex_project,
+                    custom_llm_provider="vertex_ai",
+                )
 
             openai_like_chat_completions = OpenAILikeChatHandler()
             codestral_fim_completions = CodestralTextCompletion()
@@ -198,7 +202,8 @@ class VertexAIPartnerModels(VertexBase):
             elif "claude" in model:
                 if headers is None:
                     headers = {}
-                headers.update({"Authorization": "Bearer {}".format(access_token)})
+                if "Authorization" not in headers:
+                    headers["Authorization"] = "Bearer {}".format(access_token)
 
                 optional_params.update(
                     {
