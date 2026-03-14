@@ -161,6 +161,17 @@ def test_document_inlining_example(disable_add_transform_inline_image_block):
             "vision-gpt",
             "http://example.com/image.png",
         ),
+        # Test base64 data URLs - should NOT add #transform=inline
+        (
+            {"image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"},
+            "gpt-4",
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ",
+        ),
+        (
+            {"image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD"}},
+            "gpt-4",
+            {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD"},
+        ),
     ],
 )
 def test_transform_inline(content, model, expected_url):

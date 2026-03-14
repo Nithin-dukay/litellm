@@ -179,17 +179,24 @@ class FireworksAIConfig(OpenAIGPTConfig):
         Add transform_inline to the image_url (allows non-vision models to parse documents/images/etc.)
         - ignore if model is a vision model
         - ignore if user has disabled this feature
+        - ignore if the URL is a data URL (base64-encoded image)
         """
         if (
             "vision" in model or disable_add_transform_inline_image_block
         ):  # allow user to toggle this feature.
             return content
+
+        # Check if the URL is a data URL (base64-encoded image)
+        # Don't add #transform=inline to data URLs as it corrupts the base64 encoding
         if isinstance(content["image_url"], str):
-            content["image_url"] = f"{content['image_url']}#transform=inline"
+            if not content["image_url"].startswith("data:"):
+                content["image_url"] = f"{content['image_url']}#transform=inline"
         elif isinstance(content["image_url"], dict):
-            content["image_url"][
-                "url"
-            ] = f"{content['image_url']['url']}#transform=inline"
+            url = content["image_url"].get("url", "")
+            if not url.startswith("data:"):
+                content["image_url"][
+                    "url"
+                ] = f"{content['image_url']['url']}#transform=inline"
         return content
 
     def _transform_tools(

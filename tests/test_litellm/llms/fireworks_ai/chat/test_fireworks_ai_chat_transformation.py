@@ -191,3 +191,105 @@ def test_transform_messages_helper_removes_provider_specific_fields():
     out = config._transform_messages_helper(messages, model="fireworks/test", litellm_params={})
     for msg in out:
         assert "provider_specific_fields" not in msg
+
+
+@pytest.mark.parametrize(
+    "content, model, disable_flag, expected_url",
+    [
+        # Regular HTTP URLs should get #transform=inline
+        (
+            {"image_url": "http://example.com/image.png"},
+            "gpt-4",
+            False,
+            "http://example.com/image.png#transform=inline",
+        ),
+        # HTTPS URLs should get #transform=inline
+        (
+            {"image_url": "https://example.com/image.png"},
+            "gpt-4",
+            False,
+            "https://example.com/image.png#transform=inline",
+        ),
+        # Base64 data URLs should NOT get #transform=inline (Issue #23583)
+        (
+            {"image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"},
+            "gpt-4",
+            False,
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ",
+        ),
+        # Base64 data URLs (JPEG) should NOT get #transform=inline
+        (
+            {"image_url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD"},
+            "gpt-4",
+            False,
+            "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD",
+        ),
+        # Vision models should not get #transform=inline
+        (
+            {"image_url": "http://example.com/image.png"},
+            "vision-gpt",
+            False,
+            "http://example.com/image.png",
+        ),
+        # Disabled flag prevents #transform=inline
+        (
+            {"image_url": "http://example.com/image.png"},
+            "gpt-4",
+            True,
+            "http://example.com/image.png",
+        ),
+    ],
+)
+def test_add_transform_inline_image_block_with_data_urls(
+    content, model, disable_flag, expected_url
+):
+    """
+    Test that _add_transform_inline_image_block correctly handles different URL types.
+
+    This test ensures that:
+    1. Regular HTTP/HTTPS URLs get #transform=inline appended
+    2. Base64 data URLs do NOT get #transform=inline (to avoid "Incorrect padding" errors)
+    3. Vision models don't get the transform
+    4. The disable flag works correctly
+
+    Related issue: https://github.com/BerriAI/litellm/issues/23583
+    """
+    config = FireworksAIConfig()
+    result = config._add_transform_inline_image_block(
+        content=content,
+        model=model,
+        disable_add_transform_inline_image_block=disable_flag,
+    )
+    assert result["image_url"] == expected_url
+
+
+@pytest.mark.parametrize(
+    "content, model, expected_url",
+    [
+        # Dict format with regular URL
+        (
+            {"image_url": {"url": "http://example.com/image.png"}},
+            "gpt-4",
+            "http://example.com/image.png#transform=inline",
+        ),
+        # Dict format with base64 data URL (should NOT get transform)
+        (
+            {"image_url": {"url": "data:image/png;base64,iVBORw0KGgo"}},
+            "gpt-4",
+            "data:image/png;base64,iVBORw0KGgo",
+        ),
+    ],
+)
+def test_add_transform_inline_image_block_dict_format(content, model, expected_url):
+    """
+    Test that _add_transform_inline_image_block handles dict format image_url correctly.
+
+    Related issue: https://github.com/BerriAI/litellm/issues/23583
+    """
+    config = FireworksAIConfig()
+    result = config._add_transform_inline_image_block(
+        content=content,
+        model=model,
+        disable_add_transform_inline_image_block=False,
+    )
+    assert result["image_url"]["url"] == expected_url
