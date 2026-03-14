@@ -1995,3 +1995,125 @@ def test_map_optional_params_preserves_reasoning_summary():
     assert responses_api_request["reasoning"] == {"effort": "high", "summary": "detailed"}
     assert responses_api_request["reasoning"]["effort"] == "high"
     assert responses_api_request["reasoning"]["summary"] == "detailed"
+
+
+def test_convert_chat_completion_file_to_responses_api_input_file():
+    """
+    Test that type: "file" content is correctly transformed to type: "input_file" for Responses API
+
+    Regression test for issue #23588:
+    Chat Completions: {"type": "file", "file": {"file_data": "...", "filename": "..."}}
+    Should be converted to Responses API: {"type": "input_file", "file_data": "...", "filename": "..."}
+    """
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    # Test with file_data and filename
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "What is the secret word in this PDF?",
+                },
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": "data:application/pdf;base64,JVBERi0xLjQKJeLjz9M=",
+                        "filename": "secret-word.pdf",
+                    },
+                },
+            ],
+        },
+    ]
+
+    input_items, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    # Verify the message was converted correctly
+    assert len(input_items) == 1
+    assert input_items[0]["type"] == "message"
+    assert input_items[0]["role"] == "user"
+
+    content = input_items[0]["content"]
+    assert len(content) == 2
+
+    # First item should be text
+    assert content[0]["type"] == "input_text"
+    assert content[0]["text"] == "What is the secret word in this PDF?"
+
+    # Second item should be transformed to input_file
+    assert content[1]["type"] == "input_file"
+    assert content[1]["file_data"] == "data:application/pdf;base64,JVBERi0xLjQKJeLjz9M="
+    assert content[1]["filename"] == "secret-word.pdf"
+    # Should not have the nested "file" key
+    assert "file" not in content[1]
+
+
+def test_convert_chat_completion_file_with_file_id_to_responses_api():
+    """Test that type: "file" with file_id is correctly transformed"""
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {
+                        "file_id": "file-abc123xyz",
+                    },
+                },
+            ],
+        },
+    ]
+
+    input_items, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    # Verify the file_id was preserved
+    content = input_items[0]["content"]
+    assert content[0]["type"] == "input_file"
+    assert content[0]["file_id"] == "file-abc123xyz"
+    assert "file" not in content[0]
+
+
+def test_convert_chat_completion_file_with_both_file_id_and_data():
+    """Test that type: "file" with both file_id and file_data is correctly transformed"""
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {
+                        "file_id": "file-abc123xyz",
+                        "file_data": "data:application/pdf;base64,JVBERi0xLjQKJeLjz9M=",
+                        "filename": "document.pdf",
+                    },
+                },
+            ],
+        },
+    ]
+
+    input_items, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    # Verify both fields were preserved
+    content = input_items[0]["content"]
+    assert content[0]["type"] == "input_file"
+    assert content[0]["file_id"] == "file-abc123xyz"
+    assert content[0]["file_data"] == "data:application/pdf;base64,JVBERi0xLjQKJeLjz9M="
+    assert content[0]["filename"] == "document.pdf"
+    assert "file" not in content[0]
