@@ -194,6 +194,95 @@ async def view_spend_tags(
         )
 
 
+@router.get(
+    "/spend/tags/unique",
+    tags=["Budget & Spend Tracking"],
+    dependencies=[Depends(user_api_key_auth)],
+    responses={
+        200: {"model": List[str]},
+    },
+    include_in_schema=False,
+)
+async def get_unique_request_tags(
+    start_date: Optional[str] = fastapi.Query(
+        default=None,
+        description="Time from which to filter tags",
+    ),
+    end_date: Optional[str] = fastapi.Query(
+        default=None,
+        description="Time till which to filter tags",
+    ),
+):
+    """
+    Get all unique request tags from spend logs.
+    Returns a sorted list of unique tag keys and values.
+
+    Example Request:
+    ```
+    curl -X GET "http://0.0.0.0:8000/spend/tags/unique" \
+-H "Authorization: Bearer sk-1234"
+    ```
+
+    With date filter:
+    ```
+    curl -X GET "http://0.0.0.0:8000/spend/tags/unique?start_date=2025-01-01&end_date=2025-12-31" \
+-H "Authorization: Bearer sk-1234"
+    ```
+    """
+    from litellm.proxy.proxy_server import prisma_client
+
+    try:
+        if prisma_client is None:
+            raise ProxyException(
+                message="Database not connected",
+                type="internal_error",
+                param="None",
+                code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Build query based on date filters
+        if start_date and end_date:
+            sql_query = """
+            SELECT DISTINCT jsonb_object_keys(request_tags) AS tag_key
+            FROM "LiteLLM_SpendLogs"
+            WHERE request_tags IS NOT NULL
+              AND request_tags != 'null'::jsonb
+              AND request_tags != '{}'::jsonb
+              AND "startTime" >= $1::timestamptz
+              AND "startTime" <= $2::timestamptz
+            ORDER BY tag_key;
+            """
+            response = await prisma_client.db.query_raw(
+                sql_query,
+                start_date,
+                end_date,
+            )
+        else:
+            sql_query = """
+            SELECT DISTINCT jsonb_object_keys(request_tags) AS tag_key
+            FROM "LiteLLM_SpendLogs"
+            WHERE request_tags IS NOT NULL
+              AND request_tags != 'null'::jsonb
+              AND request_tags != '{}'::jsonb
+            ORDER BY tag_key;
+            """
+            response = await prisma_client.db.query_raw(sql_query)
+
+        # Extract tag keys from response
+        unique_tags = [row["tag_key"] for row in response if row.get("tag_key")]
+        return unique_tags
+
+    except Exception as e:
+        if isinstance(e, ProxyException):
+            raise e
+        raise ProxyException(
+            message=f"/spend/tags/unique Error: {str(e)}",
+            type="internal_error",
+            param="None",
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
 async def get_global_activity_internal_user(
     user_api_key_dict: UserAPIKeyAuth, start_date: datetime, end_date: datetime
 ):
@@ -1697,6 +1786,10 @@ async def ui_view_spend_logs(  # noqa: PLR0915
     error_message: Optional[str] = fastapi.Query(
         default=None, description="Filter logs by error message (partial string match)"
     ),
+    request_tags: Optional[str] = fastapi.Query(
+        default=None,
+        description="Filter logs by request tags (comma-separated key:value pairs, e.g., 'env:prod,team:backend')",
+    ),
     sort_by: str = fastapi.Query(
         default="startTime",
         description="Sort logs by field: spend, total_tokens, startTime, or endTime",
@@ -1957,6 +2050,17 @@ async def ui_view_spend_logs(  # noqa: PLR0915
             )
             sql_params.append(f"%{error_message}%")
             p += 1
+
+        # Request tags filter (supports filtering by tag keys)
+        if request_tags is not None:
+            # Parse comma-separated tag keys (e.g., "env,team,version")
+            tag_keys = [tag.strip() for tag in request_tags.split(",") if tag.strip()]
+            if tag_keys:
+                # Filter logs that have all specified tag keys
+                for tag_key in tag_keys:
+                    sql_conditions.append(f"request_tags ? ${p}")
+                    sql_params.append(tag_key)
+                    p += 1
 
         # Quote column names that need quoting in SQL
         _sql_col = (

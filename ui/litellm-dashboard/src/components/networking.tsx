@@ -2552,6 +2552,41 @@ export const allEndUsersCall = async (accessToken: string) => {
   }
 };
 
+export const allUniqueTagsCall = async (
+  accessToken: string,
+  startDate?: string,
+  endDate?: string
+): Promise<string[]> => {
+  try {
+    const base = proxyBaseUrl ? `${proxyBaseUrl}/spend/tags/unique` : `/spend/tags/unique`;
+    const params = new URLSearchParams();
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
+    const url = params.toString() ? `${base}?${params.toString()}` : base;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        [globalLitellmHeaderName]: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      const errorMessage = deriveErrorMessage(errorData);
+      handleError(errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return data || [];
+  } catch (error) {
+    console.error("Failed to fetch unique tags:", error);
+    throw error;
+  }
+};
+
 export const userFilterUICall = async (accessToken: string, params: URLSearchParams) => {
   try {
     const base = proxyBaseUrl ? `${proxyBaseUrl}/user/filter/ui` : `/user/filter/ui`;
@@ -2606,6 +2641,8 @@ interface UiSpendLogsParams {
   key_alias?: string;
   error_code?: string;
   error_message?: string;
+  /** Filter by request tags (comma-separated tag keys) */
+  request_tags?: string;
   sort_by?: string;
   sort_order?: "asc" | "desc";
   min_spend?: number;

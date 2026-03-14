@@ -15,7 +15,7 @@ import { KeyResponse, Team } from "../key_team_helpers/key_list";
 import { PaginatedKeyAliasSelect } from "../KeyAliasSelect/PaginatedKeyAliasSelect/PaginatedKeyAliasSelect";
 import { PaginatedModelSelect } from "../ModelSelect/PaginatedModelSelect/PaginatedModelSelect";
 import FilterComponent, { FilterOption } from "../molecules/filter";
-import { allEndUsersCall, keyInfoV1Call, uiSpendLogsCall } from "../networking";
+import { allEndUsersCall, allUniqueTagsCall, keyInfoV1Call, uiSpendLogsCall } from "../networking";
 import KeyInfoView from "../templates/key_info_view";
 import AuditLogs from "./audit_logs";
 import { createColumns, LogEntry, type LogsSortField } from "./columns";
@@ -465,6 +465,28 @@ export default function SpendLogsTable({
       name: "Error Message",
       label: "Error Message",
       isSearchable: false,
+    },
+    {
+      name: "Request Tags",
+      label: "Request Tags",
+      isSearchable: true,
+      searchFn: async (searchText: string) => {
+        if (!accessToken) return [];
+        try {
+          const tags = await allUniqueTagsCall(
+            accessToken,
+            moment(startTime).utc().format("YYYY-MM-DD HH:mm:ss"),
+            moment(endTime).utc().format("YYYY-MM-DD HH:mm:ss")
+          );
+          const filtered = tags.filter((tag: string) =>
+            tag.toLowerCase().includes(searchText.toLowerCase())
+          );
+          return filtered.map((tag: string) => ({ label: tag, value: tag }));
+        } catch (error) {
+          console.error("Failed to fetch tags:", error);
+          return [];
+        }
+      },
     },
   ];
 
