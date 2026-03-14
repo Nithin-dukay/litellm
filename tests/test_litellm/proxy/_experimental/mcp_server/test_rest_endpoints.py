@@ -1126,3 +1126,47 @@ class TestGetToolsForSingleServer:
         assert "tool3" in tool_names
         assert "tool1" not in tool_names
         assert "tool4" not in tool_names
+
+    async def test_filters_tools_when_only_disallowed_tools_set(self, monkeypatch):
+        """Test disallowed_tools-only server config filters tool list correctly."""
+        from litellm.proxy._experimental.mcp_server.server import MCPServer
+        from litellm.types.mcp import MCPTransport
+
+        class MockTool:
+            def __init__(self, name, description):
+                self.name = name
+                self.description = description
+                self.inputSchema = {}
+
+        mock_tools = [
+            MockTool("analyze_datadog_logs", "Analyze logs"),
+            MockTool("create_datadog_notebook", "Create notebook"),
+            MockTool("edit_datadog_notebook", "Edit notebook"),
+        ]
+
+        async def fake_get_tools_from_server(**kwargs):
+            return mock_tools
+
+        monkeypatch.setattr(
+            rest_endpoints.global_mcp_server_manager,
+            "_get_tools_from_server",
+            fake_get_tools_from_server,
+            raising=False,
+        )
+
+        server = MCPServer(
+            server_id="test-server-id",
+            name="test-server",
+            transport=MCPTransport.sse,
+            allowed_tools=None,
+            disallowed_tools=["create_datadog_notebook", "edit_datadog_notebook"],
+        )
+
+        result = await rest_endpoints._get_tools_for_single_server(
+            server=server,
+            server_auth_header=None,
+            user_api_key_auth=UserAPIKeyAuth(api_key="test-key"),
+        )
+
+        assert len(result) == 1
+        assert result[0].name == "analyze_datadog_logs"

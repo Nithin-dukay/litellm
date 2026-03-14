@@ -303,9 +303,14 @@ if MCP_AVAILABLE:
             raw_headers=raw_headers,
         )
 
-        # Filter tools based on allowed_tools configuration
-        # Only filter if allowed_tools is explicitly configured (not None and not empty)
-        if server.allowed_tools is not None and len(server.allowed_tools) > 0:
+        # Filter tools based on server allow/deny tool configuration
+        has_allowed_tools = (
+            server.allowed_tools is not None and len(server.allowed_tools) > 0
+        )
+        has_disallowed_tools = (
+            server.disallowed_tools is not None and len(server.disallowed_tools) > 0
+        )
+        if has_allowed_tools or has_disallowed_tools:
             tools = filter_tools_by_allowed_tools(tools, server)
 
         # Filter tools based on user_api_key_auth.object_permission.mcp_tool_permissions
