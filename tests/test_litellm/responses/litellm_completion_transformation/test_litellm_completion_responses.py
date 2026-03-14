@@ -130,6 +130,43 @@ class TestLiteLLMCompletionResponsesConfig:
         assert "extra_field" not in result["file"]
         assert "another_field" not in result["file"]
 
+    def test_transform_chat_completion_file_content_to_file_item_with_file_data_and_filename(self):
+        """Test that chat-completions style file content is preserved as file content (not converted to text)."""
+        content = [
+            {
+                "type": "file",
+                "file": {
+                    "file_data": "data:application/pdf;base64,abc123",
+                    "filename": "secret-word.pdf",
+                },
+            }
+        ]
+
+        result = LiteLLMCompletionResponsesConfig._transform_responses_api_content_to_chat_completion_content(
+            content
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["type"] == "file"
+        assert result[0]["file"]["file_data"] == "data:application/pdf;base64,abc123"
+        assert result[0]["file"]["filename"] == "secret-word.pdf"
+        assert "text" not in result[0]
+
+    def test_transform_chat_completion_file_content_to_file_item_with_file_id(self):
+        """Test that chat-completions style file content with file_id is preserved as file content."""
+        content = [{"type": "file", "file": {"file_id": "file-abc123xyz"}}]
+
+        result = LiteLLMCompletionResponsesConfig._transform_responses_api_content_to_chat_completion_content(
+            content
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["type"] == "file"
+        assert result[0]["file"]["file_id"] == "file-abc123xyz"
+        assert "text" not in result[0]
+
     def test_transform_input_image_item_to_image_item_with_image_url(self):
         """Test transformation of input_image item with image_url to Chat Completion image format"""
         # Setup

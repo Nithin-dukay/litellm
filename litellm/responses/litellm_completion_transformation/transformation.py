@@ -1211,7 +1211,7 @@ class LiteLLMCompletionResponsesConfig:
             Dictionary with transformed file structure for Chat Completion
         """
         file_dict: Dict[str, Any] = {}
-        keys = ["file_id", "file_data"]
+        keys = ["file_id", "file_data", "filename"]
         for key in keys:
             if item.get(key):
                 file_dict[key] = item.get(key)
@@ -1260,6 +1260,20 @@ class LiteLLMCompletionResponsesConfig:
                                 item
                             )
                         )
+                    elif item.get("type") == "file":
+                        file_payload = item.get("file") or {}
+                        if isinstance(file_payload, dict):
+                            transformed_file_item: Dict[str, Any] = {
+                                "type": "input_file",
+                                "file_id": file_payload.get("file_id"),
+                                "file_data": file_payload.get("file_data"),
+                                "filename": file_payload.get("filename"),
+                            }
+                            content_list.append(
+                                LiteLLMCompletionResponsesConfig._transform_input_file_item_to_file_item(
+                                    transformed_file_item
+                                )
+                            )
                     elif item.get("type") == "input_image":
                         content_list.append(
                             dict(
