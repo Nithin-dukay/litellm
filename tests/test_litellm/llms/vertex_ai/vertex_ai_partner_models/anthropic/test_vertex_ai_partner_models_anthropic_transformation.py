@@ -533,15 +533,15 @@ def test_vertex_ai_anthropic_output_config_dropped():
 def test_vertex_ai_anthropic_output_format_and_output_config_both_dropped():
     """
     Test that both output_format and output_config are dropped from Vertex AI requests.
-    
+
     This ensures that even if both parameters somehow make it to the transform_request,
     they are properly cleaned up before sending to Vertex AI.
     """
     config = VertexAIAnthropicConfig()
-    
+
     messages = [{"role": "user", "content": "Extract structured data"}]
     headers = {}
-    
+
     optional_params = {
         "max_tokens": 2048,
         "output_format": {
@@ -555,7 +555,7 @@ def test_vertex_ai_anthropic_output_format_and_output_config_both_dropped():
             "effort": "high"
         },
     }
-    
+
     # Simulate parent class creating test_data with both parameters
     # (as if the parent transform_request added them)
     test_data = {
@@ -565,15 +565,15 @@ def test_vertex_ai_anthropic_output_format_and_output_config_both_dropped():
         "output_format": optional_params["output_format"],
         "output_config": optional_params["output_config"],
     }
-    
+
     # Mock the parent transform_request to return data with both parameters
     original_transform = config.__class__.__bases__[0].transform_request
-    
+
     def mock_transform_request(self, model, messages, optional_params, litellm_params, headers):
         return test_data.copy()
-    
+
     config.__class__.__bases__[0].transform_request = mock_transform_request
-    
+
     try:
         result = config.transform_request(
             model="claude-3-5-sonnet-20241022",
@@ -582,19 +582,101 @@ def test_vertex_ai_anthropic_output_format_and_output_config_both_dropped():
             litellm_params={},
             headers=headers,
         )
-        
+
         # Verify both were removed
         assert "output_format" not in result, \
             "output_format should be dropped from Vertex AI requests"
         assert "output_config" not in result, \
             "output_config should be dropped from Vertex AI requests"
-        
+
         # Verify essential params are preserved
         assert result["max_tokens"] == 2048, "max_tokens should be preserved"
         assert "messages" in result, "messages should be present"
         assert "model" not in result, "model should also be dropped for Vertex AI"
-        
+
     finally:
         # Restore original method
         config.__class__.__bases__[0].transform_request = original_transform
+
+
+def test_vertex_ai_partner_models_claude_prefetched_auth_header():
+    """
+    Test fix for issue #23572: Pre-fetched Authorization header should not be overwritten.
+
+    When calling Claude on Vertex AI via a pre-fetched Bearer token (e.g. Workload Identity
+    Federation / custom auth chain), the token passed via extra_headers should be preserved
+    and _ensure_access_token should be skipped.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from litellm.llms.vertex_ai.vertex_ai_partner_models.main import (
+        VertexAIPartnerModels,
+    )
+
+    partner_models = VertexAIPartnerModels()
+
+    # Pre-fetched token that should be preserved
+    prefetched_token = "ya29.test-prefetched-token-from-custom-auth"
+
+    messages = [{"role": "user", "content": "Hello"}]
+    headers = {"Authorization": f"Bearer {prefetched_token}"}
+
+    # Mock the dependencies
+    mock_model_response = MagicMock()
+    mock_anthropic_completion = MagicMock(return_value=mock_model_response)
+
+    with patch(
+        "litellm.llms.vertex_ai.vertex_ai_partner_models.main.AnthropicChatCompletion"
+    ) as MockAnthropicChat, patch(
+        "litellm.llms.vertex_ai.vertex_ai_partner_models.main.VertexLLM"
+    ) as MockVertexLLM, patch(
+        "litellm.llms.vertex_ai.vertex_ai_partner_models.main.VertexAIPartnerModels.get_complete_vertex_url"
+    ) as mock_get_url:
+
+        # Setup mocks
+        MockAnthropicChat.return_value.completion = mock_anthropic_completion
+        mock_vertex_instance = MockVertexLLM.return_value
+        mock_vertex_instance._ensure_access_token = MagicMock(
+            return_value=("should-not-be-used", "test-project")
+        )
+        mock_get_url.return_value = (
+            "https://us-central1-aiplatform.googleapis.com/v1/test"
+        )
+
+        # Call completion with pre-fetched auth header
+        partner_models.completion(
+            model="claude-3-5-sonnet-v2@20241022",
+            messages=messages,
+            model_response=mock_model_response,
+            print_verbose=MagicMock(),
+            encoding=None,
+            logging_obj=MagicMock(),
+            api_base=None,
+            optional_params={},
+            custom_prompt_dict={},
+            headers=headers,
+            timeout=600,
+            litellm_params={},
+            vertex_project="test-project",
+            vertex_location="us-central1",
+            vertex_credentials=None,
+            logger_fn=None,
+            acompletion=False,
+            client=None,
+        )
+
+        # Verify _ensure_access_token was NOT called (since Authorization header was provided)
+        mock_vertex_instance._ensure_access_token.assert_not_called()
+
+        # Verify the anthropic completion was called
+        assert mock_anthropic_completion.called
+
+        # Verify the headers passed to anthropic completion contain the original token
+        call_kwargs = mock_anthropic_completion.call_args[1]
+        assert "headers" in call_kwargs
+        assert "Authorization" in call_kwargs["headers"]
+        assert call_kwargs["headers"]["Authorization"] == f"Bearer {prefetched_token}"
+
+        # Verify the api_key parameter should be None when using pre-fetched token
+        assert call_kwargs["api_key"] is None
 
