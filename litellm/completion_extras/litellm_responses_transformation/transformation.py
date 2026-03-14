@@ -684,6 +684,25 @@ class LiteLLMResponsesTransformationHandler(CompletionTransformationBridge):
                         verbose_logger.debug(
                             f"Chat provider:   image_url -> {converted}"
                         )
+                    elif original_type == "file":
+                        file_obj = item.get("file")
+                        if isinstance(file_obj, dict):
+                            converted = {"type": "input_file"}
+                            for key in ["file_data", "filename", "file_id"]:
+                                value = file_obj.get(key)
+                                if value is not None:
+                                    converted[key] = value
+                            result.append(converted)
+                            verbose_logger.debug(f"Chat provider:   file -> {converted}")
+                        else:
+                            # Fallback for malformed file payloads
+                            converted = self._convert_content_str_to_input_text(
+                                str(item.get("text", item)), role
+                            )
+                            result.append(converted)
+                            verbose_logger.debug(
+                                f"Chat provider:   malformed_file({original_type}) -> {converted}"
+                            )
                     else:
                         # Try to map other types to responses API format
                         item_type = original_type or "input_text"

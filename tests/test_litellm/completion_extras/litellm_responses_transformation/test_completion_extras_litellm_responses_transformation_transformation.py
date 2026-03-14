@@ -208,6 +208,47 @@ def test_convert_chat_completion_messages_to_responses_api_tool_result_with_text
     print("✓ Tool result with text correctly transformed to use input_text for Responses API format")
 
 
+def test_convert_chat_completion_messages_to_responses_api_file_input():
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        LiteLLMResponsesTransformationHandler,
+    )
+
+    handler = LiteLLMResponsesTransformationHandler()
+
+    file_data = "data:application/pdf;base64,JVBERi0xLjQKJ..."
+    filename = "secret-word.pdf"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Read this PDF and return the secret word."},
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": file_data,
+                        "filename": filename,
+                    },
+                },
+            ],
+        }
+    ]
+
+    response, _ = handler.convert_chat_completion_messages_to_responses_api(messages)
+
+    assert response[0]["type"] == "message"
+    assert response[0]["role"] == "user"
+
+    converted_content = response[0]["content"]
+    assert isinstance(converted_content, list)
+    assert len(converted_content) == 2
+
+    converted_file = converted_content[1]
+    assert converted_file["type"] == "input_file"
+    assert converted_file["file_data"] == file_data
+    assert converted_file["filename"] == filename
+
+
 def test_openai_responses_chunk_parser_reasoning_summary():
     from litellm.completion_extras.litellm_responses_transformation.transformation import (
         OpenAiResponsesToChatCompletionStreamIterator,
